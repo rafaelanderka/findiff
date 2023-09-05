@@ -1,5 +1,5 @@
 from .utils import *
-from .diff import Coef, Id, Diff, Plus, Minus, Mul, DEFAULT_ACC, LinearMap
+from .diff import Coef, Id, Diff, Plus, Minus, Mul, DEFAULT_ACC, DEFAULT_PERIODICITY, LinearMap
 from .stencils import StencilSet
 
 
@@ -128,6 +128,11 @@ class FinDiff(LinearMap):
         if 'acc' in kwargs:
             self.acc = kwargs['acc']
 
+        if 'periodic' in kwargs:
+            periodic = kwargs['periodic']
+        else:
+            periodic = DEFAULT_PERIODICITY
+
         if isinstance(args[0], tuple): # mixed partial derivative
             pds = None
 
@@ -153,13 +158,15 @@ class FinDiff(LinearMap):
                 order = 1
             else:
                 raise ValueError('Format: (axis, spacing, order=1)')
-            pds = Diff(axis, order)
+            pds = Diff(axis, order, periodic=periodic)
 
             spac[axis] = h
 
         # Check if spac is really the spacing and not the coordinates (nonuniform case)
         for a, s in spac.items():
             if hasattr(s, '__len__'):
+                if periodic:
+                    raise ValueError('Nonuniform operators do not support periodic BCs')
                 self.coords = spac
                 self.uniform = False
                 break

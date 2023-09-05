@@ -9,6 +9,7 @@ from .stencils import StencilSet
 from .utils import *
 
 DEFAULT_ACC = 2
+DEFAULT_PERIODICITY = False
 
 
 class Operator(object):
@@ -245,6 +246,8 @@ class Diff(LinearMap):
         self.acc = None
         if 'acc' in kwargs:
             self.acc = kwargs['acc']
+        if 'periodic' in kwargs:
+            self.periodic = kwargs['periodic']
 
     def apply(self, u, *args, **kwargs):
         """ Applies the partial derivative to a numpy array."""
@@ -422,6 +425,7 @@ class Diff(LinearMap):
 
         acc = self._properties(self.acc, acc, 2)
 
+        shape = np.array(shape)
         ndims = len(shape)
         siz = np.prod(shape)
         long_indices_nd = long_indices_as_ndarray(shape)
@@ -438,29 +442,39 @@ class Diff(LinearMap):
             # translate offsets of given scheme to long format
             offsets_long = []
             for o_1d in offsets_1d:
-                o_nd = np.zeros(ndims)
+                o_nd = np.zeros(ndims, dtype=int)
                 o_nd[axis] = o_1d
-                o_long = to_long_index(o_nd, shape)
-                offsets_long.append(o_long)
+                offsets_long.append(o_nd)
 
             # determine points where to evaluate current scheme in long format
             nside = len(coeff_dict['center']['coefficients']) // 2
             if scheme == 'center':
                 multi_slice = [slice(None, None)] * ndims
-                multi_slice[axis] = slice(nside, -nside)
+                if self.periodic:
+                    multi_slice[axis] = slice(0, None)
+                else:
+                    multi_slice[axis] = slice(nside, -nside)
                 Is = long_indices_nd[tuple(multi_slice)].reshape(-1)
             elif scheme == 'forward':
-                multi_slice = [slice(None, None)] * ndims
-                multi_slice[axis] = slice(0, nside)
+                if self.periodic:
+                    multi_slice = [slice(0, 0)] * ndims
+                else:
+                    multi_slice = [slice(None, None)] * ndims
+                    multi_slice[axis] = slice(0, nside)
                 Is = long_indices_nd[tuple(multi_slice)].reshape(-1)
-            else:
-                multi_slice = [slice(None, None)] * ndims
-                multi_slice[axis] = slice(-nside, None)
+            elif scheme == 'backward':
+                if self.periodic:
+                    multi_slice = [slice(0, 0)] * ndims
+                else:
+                    multi_slice = [slice(None, None)] * ndims
+                    multi_slice[axis] = slice(-nside, None)
                 Is = long_indices_nd[tuple(multi_slice)].reshape(-1)
+            Is_nd = np.array(np.unravel_index(Is, shape))
 
             for o, c in zip(offsets_long, coeffs):
                 v = c / h ** order
-                mat[Is, Is + o] = v
+                Is_o = np.ravel_multi_index((Is_nd + o[:,None]) % shape[:,None], shape)
+                mat[Is, Is_o] = v
 
         return mat
 
